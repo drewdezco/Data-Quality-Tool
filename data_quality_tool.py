@@ -34,8 +34,10 @@ class DataQualityChecker:
 
     def expect_column_values_to_be_unique(self, column):
         total = len(self.df[column])
-        duplicate_mask = self.df.duplicated(subset=[column])
-        failed = duplicate_mask.sum()
+        # Count all instances of duplicated values (not just subsequent ones)
+        value_counts = self.df[column].value_counts()
+        duplicate_values = value_counts[value_counts > 1]
+        failed = duplicate_values.sum()  # Total count of all duplicate instances
         passed = total - failed
         success_rate = (passed / total) * 100 if total > 0 else 0
 
@@ -1980,6 +1982,11 @@ class DataQualityChecker:
 
             # Add descriptive statistics for numeric columns
             if pd.api.types.is_numeric_dtype(col_data):
+                # Calculate mode (most frequent value)
+                mode_values = col_data.mode()
+                most_frequent = mode_values.iloc[0] if len(mode_values) > 0 else "N/A"
+                mode_count = (col_data == most_frequent).sum() if most_frequent != "N/A" else 0
+                
                 html_parts.append(f"""
                     <div class="stat-row">
                         <span class="stat-label">Mean</span>
@@ -1988,6 +1995,14 @@ class DataQualityChecker:
                     <div class="stat-row">
                         <span class="stat-label">Median</span>
                         <span class="stat-value">{col_data.median():.2f}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Most Frequent</span>
+                        <span class="stat-value">{most_frequent}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Highest Frequency</span>
+                        <span class="stat-value">{mode_count}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Min</span>
@@ -2010,6 +2025,11 @@ class DataQualityChecker:
                     newest_date = non_null_dates.max()
                     median_date = non_null_dates.median()
                     
+                    # Calculate most frequent date
+                    mode_dates = non_null_dates.mode()
+                    most_frequent_date = mode_dates.iloc[0] if len(mode_dates) > 0 else None
+                    mode_date_count = (non_null_dates == most_frequent_date).sum() if most_frequent_date is not None else 0
+                    
                     html_parts.append(f"""
                         <div class="stat-row">
                             <span class="stat-label">Oldest Date</span>
@@ -2022,6 +2042,14 @@ class DataQualityChecker:
                         <div class="stat-row">
                             <span class="stat-label">Median Date</span>
                             <span class="stat-value">{median_date.strftime('%Y-%m-%d')}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Most Frequent</span>
+                            <span class="stat-value">{most_frequent_date.strftime('%Y-%m-%d') if most_frequent_date else 'N/A'}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Highest Frequency</span>
+                            <span class="stat-value">{mode_date_count}</span>
                         </div>
                         <div class="stat-row">
                             <span class="stat-label">Date Range</span>
@@ -2038,8 +2066,21 @@ class DataQualityChecker:
 
             # Add sample values for non-numeric, non-datetime columns
             elif not pd.api.types.is_numeric_dtype(col_data) and not pd.api.types.is_datetime64_any_dtype(col_data):
+                # Calculate most frequent value for categorical/string columns
+                mode_values = col_data.mode()
+                most_frequent = mode_values.iloc[0] if len(mode_values) > 0 else "N/A"
+                mode_count = (col_data == most_frequent).sum() if most_frequent != "N/A" else 0
+                
                 sample_values = col_data.dropna().head(5).tolist()
                 html_parts.append(f"""
+                    <div class="stat-row">
+                        <span class="stat-label">Most Frequent</span>
+                        <span class="stat-value">{most_frequent}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Highest Frequency</span>
+                        <span class="stat-value">{mode_count}</span>
+                    </div>
                     <div class="stat-row sample-values">
                         <span class="stat-label">Sample Values</span>
                         <span class="stat-value">{', '.join(map(str, sample_values))}</span>
@@ -2135,9 +2176,9 @@ class DataQualityChecker:
                             is_not_null = pd.notna(row_value)
                             cell_status = "Passed" if is_not_null else "Failed"
                         elif rule == 'unique':
-                            # For unique, we'd need to check against all other values
-                            # For now, show the overall column status
-                            cell_status = "Passed" if success_rate >= 90 else "Failed"
+                            # Check if this specific value is unique in the column
+                            value_count = (self.df[matching_column] == row_value).sum()
+                            cell_status = "Passed" if value_count == 1 else "Failed"
                         elif rule == 'in allowed set':
                             allowed_values = result.get('details', {}).get('allowed_values', [])
                             cell_status = "Passed" if row_value in allowed_values else "Failed"
@@ -2668,6 +2709,110 @@ print("Comprehensive test report generated: comprehensive_test_report.html")
 print(f"Dataset created with {len(comprehensive_test_data)} rows and {len(comprehensive_test_data.columns)} columns")
 print("All data types tested: String, Integer, Float, Boolean, Date/Time")
 print("All validation types tested: Not Null, Unique, Regex, In Set, In Range, In Date Range")
+
+# Create a specific test for unique validation with multiple duplicates
+def create_unique_test_data():
+    """Create a test DataFrame specifically for testing unique validation with multiple duplicates"""
+    import pandas as pd
+    
+    # Create test data with multiple duplicate values
+    unique_test_data = pd.DataFrame({
+        'product_id': [
+            'PROD001',  # Appears 3 times (non-unique)
+            'PROD001',  # Duplicate 1
+            'PROD001',  # Duplicate 2
+            'PROD002',  # Unique
+            'PROD003',  # Appears 2 times (non-unique)
+            'PROD003',  # Duplicate 1
+            'PROD004',  # Unique
+            'PROD005',  # Unique
+            'PROD006',  # Unique
+            'PROD007'   # Unique
+        ],
+        'category': [
+            'Electronics',  # Appears 4 times (non-unique)
+            'Electronics',  # Duplicate 1
+            'Electronics',  # Duplicate 2
+            'Electronics',  # Duplicate 3
+            'Books',        # Appears 3 times (non-unique)
+            'Books',        # Duplicate 1
+            'Books',        # Duplicate 2
+            'Clothing',     # Appears 2 times (non-unique)
+            'Clothing',     # Duplicate 1
+            'Sports'        # Unique
+        ],
+        'price': [
+            100.00,  # Unique
+            150.00,  # Unique
+            200.00,  # Unique
+            75.00,   # Unique
+            25.00,   # Unique
+            30.00,   # Unique
+            45.00,   # Unique
+            120.00,  # Unique
+            85.00,   # Unique
+            95.00    # Unique
+        ]
+    })
+    
+    return unique_test_data
+
+# Create and test the unique validation dataset
+unique_test_data = create_unique_test_data()
+checker_unique = DataQualityChecker(unique_test_data)
+
+print("\n" + "="*60)
+print("TESTING UNIQUE VALIDATION WITH MULTIPLE DUPLICATES")
+print("="*60)
+
+print(f"\nDataset Overview:")
+print(f"Total rows: {len(unique_test_data)}")
+print(f"Columns: {list(unique_test_data.columns)}")
+
+print(f"\nProduct ID value counts:")
+print(unique_test_data['product_id'].value_counts().sort_index())
+
+print(f"\nCategory value counts:")
+print(unique_test_data['category'].value_counts().sort_index())
+
+print(f"\nPrice value counts:")
+print(unique_test_data['price'].value_counts().sort_index())
+
+# Expected results calculation for verification
+def calculate_expected_unique_results(series):
+    """Calculate expected unique validation results"""
+    total = len(series)
+    value_counts = series.value_counts()
+    duplicate_values = value_counts[value_counts > 1]
+    failed = duplicate_values.sum()
+    passed = total - failed
+    success_rate = (passed / total) * 100
+    return {
+        'total': total,
+        'passed': passed,
+        'failed': failed,
+        'success_rate': round(success_rate, 1)
+    }
+
+print(f"\nExpected Results:")
+for col in ['product_id', 'category', 'price']:
+    expected = calculate_expected_unique_results(unique_test_data[col])
+    print(f"{col}: {expected['success_rate']}% ({expected['passed']} passed, {expected['failed']} failed)")
+
+# Run unique validations
+checker_unique.expect_column_values_to_be_unique("product_id")
+checker_unique.expect_column_values_to_be_unique("category") 
+checker_unique.expect_column_values_to_be_unique("price")
+
+# Generate report for unique validation testing
+checker_unique.generate_data_docs(
+    output_path="unique_validation_test.html", 
+    title="Unique Validation Test Report",
+    dataset_name="Unique Test Dataset (10 rows, 3 columns)"
+)
+
+print(f"\nUnique validation test report generated: unique_validation_test.html")
+print("Check both the Validations tab and Data Table tab to verify the counts match!")
 
 
  
