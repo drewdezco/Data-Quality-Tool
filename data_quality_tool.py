@@ -209,6 +209,39 @@ class DataQualityChecker:
         def rule_label(rule):
             # Capitalize and prettify rule names for section headers
             return rule.replace('_', ' ').capitalize()
+        
+        def get_validation_description(rule):
+            """Get a user-friendly description for each validation rule"""
+            descriptions = {
+                'not null': 'Checks for missing or empty values in the column. Ensures data completeness.',
+                'unique': 'Verifies that all values in the column are distinct. Identifies duplicate entries.',
+                'matches regex': 'Validates data format using pattern matching. Ensures values follow specific formats (emails, phone numbers, etc.).',
+                'in allowed set': 'Confirms values are from a predefined list of acceptable options. Enforces data consistency.',
+                'in range': 'Ensures numeric values fall within specified minimum and maximum bounds.',
+                'in date range': 'Validates that dates fall within acceptable time periods.',
+                'is boolean': 'Checks that values are valid boolean (True/False) data types.',
+                'is numeric': 'Verifies that values are valid numbers (integers or decimals).',
+                'is datetime': 'Ensures values are properly formatted date and time data.',
+                'length': 'Validates that text values meet minimum and maximum character length requirements.',
+                'contains': 'Checks if values contain specific required text or characters.'
+            }
+            
+            # Handle range variations
+            if 'range' in rule.lower():
+                if 'date' in rule.lower():
+                    return descriptions.get('in date range', descriptions.get('in range', 'Validates that values fall within acceptable bounds.'))
+                else:
+                    return descriptions.get('in range', 'Validates that values fall within acceptable bounds.')
+            
+            # Try exact match first, then partial matches
+            if rule in descriptions:
+                return descriptions[rule]
+            
+            for key, desc in descriptions.items():
+                if key in rule.lower() or rule.lower() in key:
+                    return desc
+            
+            return 'Validates data quality according to specified business rules.'
 
         detailed_results_html = ""
         for rule, items in grouped.items():
@@ -228,10 +261,14 @@ class DataQualityChecker:
                 '''
             # Collapsible section for this rule
             section_id = f"section-{rule.replace(' ', '-').replace('_', '-')}"
+            validation_description = get_validation_description(rule)
             detailed_results_html += f'''
             <div class="collapsible-section">
                 <button class="collapsible" onclick="toggleSection(this, '{section_id}')"><span class="arrow">&#9654;</span> {rule_label(rule)}</button>
                 <div id="{section_id}" class="content-collapsible hidden">
+                    <div class="validation-description">
+                        <p><em>{validation_description}</em></p>
+                    </div>
                     <table>
                         <tr><th>Column</th><th>Pass %</th><th>Details</th></tr>
                         {table_rows}
@@ -274,9 +311,27 @@ class DataQualityChecker:
         null_cells = self.df.isnull().sum().sum()
         completeness_rate = ((total_cells - null_cells) / total_cells) * 100 if total_cells > 0 else 0
         
-        # Calculate data type distribution
+        # Calculate data type distribution with user-friendly names
+        def get_user_friendly_dtype(dtype_name):
+            """Convert pandas dtype to user-friendly name"""
+            dtype_str = str(dtype_name).lower()
+            if 'object' in dtype_str:
+                return "Text/String"
+            elif 'int' in dtype_str:
+                return "Integer"
+            elif 'float' in dtype_str:
+                return "Decimal"
+            elif 'bool' in dtype_str:
+                return "Boolean"
+            elif 'datetime' in dtype_str:
+                return "Date/Time"
+            elif 'category' in dtype_str:
+                return "Category"
+            else:
+                return dtype_str.title()
+        
         dtype_counts = self.df.dtypes.value_counts()
-        dtype_distribution = {str(dtype): count for dtype, count in dtype_counts.items()}
+        dtype_distribution = {get_user_friendly_dtype(dtype): count for dtype, count in dtype_counts.items()}
         
         # Calculate overall uniqueness score
         uniqueness_scores = []
@@ -778,6 +833,26 @@ class DataQualityChecker:
                     display: block;
                     max-height: 2000px;
                     opacity: 1;
+                }}
+                .validation-description {{
+                    margin: 15px 0 20px 0;
+                    padding: 12px 16px;
+                    background-color: var(--bg-secondary);
+                    border-left: 4px solid var(--border-color);
+                    border-radius: 4px;
+                    transition: background-color 0.3s, border-color 0.3s;
+                }}
+                .validation-description p {{
+                    margin: 0;
+                    color: var(--text-secondary);
+                    font-size: 0.95em;
+                    line-height: 1.4;
+                    transition: color 0.3s;
+                }}
+                .validation-description em {{
+                    font-style: italic;
+                    color: var(--text-primary);
+                    transition: color 0.3s;
                 }}
                 .passed-green {{
                     color: #28a745;
@@ -1416,15 +1491,24 @@ class DataQualityChecker:
 
                 // Data type distribution chart
                 const dtypeCtx = document.getElementById('dtypeChart').getContext('2d');
+                const dtypeData = {json.dumps(dtype_chart_data)};
+                
+                // Calculate dynamic max value with safety checks
+                let suggestedMax = 10; // Default fallback
+                if (dtypeData.datasets && dtypeData.datasets[0] && dtypeData.datasets[0].data && dtypeData.datasets[0].data.length > 0) {{
+                    const maxValue = Math.max(...dtypeData.datasets[0].data);
+                    suggestedMax = Math.max(Math.ceil(maxValue * 1.1), 1); // Ensure at least 1
+                }}
+                
                 new Chart(dtypeCtx, {{
                     type: 'bar',
-                    data: {json.dumps(dtype_chart_data)},
+                    data: dtypeData,
                     options: {{
                         responsive: true,
                         scales: {{
                             y: {{
                                 beginAtZero: true,
-                                max: 100
+                                suggestedMax: suggestedMax
                             }}
                         }},
                         plugins: {{
@@ -1874,36 +1958,43 @@ class DataQualityChecker:
             return "<p>No data available for field summary.</p>"
 
         def classify_data_type(col_data):
-            """Classify data type more granularly"""
+            """Classify data type with user-friendly names"""
             if pd.api.types.is_datetime64_any_dtype(col_data):
                 return "Date/Time"
             elif pd.api.types.is_bool_dtype(col_data):
                 return "Boolean"
             elif pd.api.types.is_numeric_dtype(col_data):
-                if col_data.dtype == 'int64':
+                if 'int' in str(col_data.dtype).lower():
                     return "Integer"
-                elif col_data.dtype == 'float64':
-                    return "Float"
+                elif 'float' in str(col_data.dtype).lower():
+                    return "Decimal"
                 else:
                     return "Numeric"
             elif pd.api.types.is_object_dtype(col_data):
-                # Check if it's actually boolean data (True/False values)
+                # Enhanced detection for object types
                 sample = col_data.dropna().head(100)
                 if len(sample) > 0:
-                    # Check if all non-null values are boolean
+                    # Check for boolean-like values first
                     bool_count = sum(1 for x in sample if isinstance(x, bool))
                     if bool_count == len(sample):
                         return "Boolean"
-                    # Check if all values are string representations of boolean
+                    
+                    # Check for string representations of booleans
                     bool_string_count = sum(1 for x in sample if str(x).lower() in ['true', 'false', '1', '0'])
                     if bool_string_count == len(sample):
                         return "Boolean"
+                    
                     # Check if it's actually string data
                     if all(isinstance(x, str) for x in sample):
-                        return "String"
-                return "Object"
+                        return "Text/String"
+                return "Text/String"  # Default for object types
             else:
-                return str(col_data.dtype)
+                # Convert any remaining pandas-specific names to user-friendly
+                dtype_str = str(col_data.dtype).lower()
+                if 'category' in dtype_str:
+                    return "Category"
+                else:
+                    return dtype_str.title()
 
         def calculate_quality_scores(col_data):
             """Calculate quality scores for a column"""
