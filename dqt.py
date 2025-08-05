@@ -7,9 +7,19 @@ from collections import defaultdict
 
 
 class DataQualityChecker:
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df: pd.DataFrame, dataset_name: str = "Unknown Dataset"):
         self.df = df
         self.results = []
+        self.dataset_name = dataset_name
+
+    # -------- Dataset Management --------
+    def set_dataset_name(self, dataset_name: str):
+        """Set or update the dataset name for this checker instance."""
+        self.dataset_name = dataset_name
+    
+    def get_dataset_name(self):
+        """Get the current dataset name."""
+        return self.dataset_name
 
     # -------- Expectation Helpers --------
     def _record_result(self, column, rule, success_rate, details):
@@ -112,6 +122,225 @@ class DataQualityChecker:
     # -------- Results --------
     def get_results(self):
         return pd.DataFrame(self.results)
+    
+    def get_comprehensive_results(self, title: str = "Data Quality Report"):
+        """
+        Get comprehensive data quality snapshot including all metrics for historical analysis.
+        Returns a structured dictionary with all key information.
+        
+        Args:
+            title (str): Title for the data quality report
+        """
+        if not hasattr(self, 'df') or self.df is None:
+            return {"error": "No dataframe available for analysis"}
+        
+        # Basic results dataframe
+        df_results = pd.DataFrame(self.results)
+        
+        # Calculate basic metrics
+        total_checks = len(df_results)
+        avg_pass_rate = df_results["success_rate"].mean() if total_checks > 0 else 0
+        
+        # Dataset overview metrics
+        total_rows = len(self.df)
+        total_columns = len(self.df.columns)
+        total_cells = total_rows * total_columns
+        null_cells = self.df.isnull().sum().sum()
+        completeness_rate = ((total_cells - null_cells) / total_cells) * 100 if total_cells > 0 else 0
+        
+        # Helper functions (copied from generate_data_docs)
+        def classify_data_type(col_data):
+            """Classify data type with user-friendly names"""
+            if pd.api.types.is_datetime64_any_dtype(col_data):
+                return "Date/Time"
+            elif pd.api.types.is_bool_dtype(col_data):
+                return "Boolean"
+            elif pd.api.types.is_numeric_dtype(col_data):
+                if 'int' in str(col_data.dtype).lower():
+                    return "Integer"
+                elif 'float' in str(col_data.dtype).lower():
+                    return "Decimal"
+                else:
+                    return "Numeric"
+            elif pd.api.types.is_object_dtype(col_data):
+                sample = col_data.dropna().head(100)
+                if len(sample) > 0:
+                    bool_count = sum(1 for x in sample if isinstance(x, bool))
+                    if bool_count == len(sample):
+                        return "Boolean"
+                    bool_string_count = sum(1 for x in sample if str(x).lower() in ['true', 'false', '1', '0'])
+                    if bool_string_count == len(sample):
+                        return "Boolean"
+                    if all(isinstance(x, str) for x in sample):
+                        return "Text/String"
+                return "Text/String"
+            else:
+                dtype_str = str(col_data.dtype).lower()
+                if 'category' in dtype_str:
+                    return "Category"
+                else:
+                    return dtype_str.title()
+
+        def calculate_quality_scores(col_data):
+            """Calculate quality scores for a column"""
+            total_count = len(col_data)
+            null_count = col_data.isnull().sum()
+            distinct_count = col_data.nunique()
+            
+            # Completeness Score
+            completeness = ((total_count - null_count) / total_count) * 100 if total_count > 0 else 0
+            
+            # Uniqueness Score
+            uniqueness = (distinct_count / total_count) * 100 if total_count > 0 else 0
+            
+            # Consistency Score
+            consistency = 100.0
+            if pd.api.types.is_object_dtype(col_data):
+                sample = col_data.dropna().head(100)
+                if len(sample) > 0:
+                    type_counts = {}
+                    for item in sample:
+                        item_type = type(item).__name__
+                        type_counts[item_type] = type_counts.get(item_type, 0) + 1
+                    most_common_type_count = max(type_counts.values()) if type_counts else 0
+                    consistency = (most_common_type_count / len(sample)) * 100
+            
+            return {
+                'completeness': round(completeness, 1),
+                'uniqueness': round(uniqueness, 1),
+                'consistency': round(consistency, 1)
+            }
+
+        def is_critical_data_element(col_data):
+            """Determine if a column is a critical data element"""
+            total_count = len(col_data)
+            null_count = col_data.isnull().sum()
+            completeness = ((total_count - null_count) / total_count) * 100 if total_count > 0 else 0
+            data_density = (total_count - null_count) / total_count if total_count > 0 else 0
+            is_critical = (completeness >= 80 and data_density >= 0.7 and null_count < total_count * 0.5)
+            return is_critical
+        
+        # Analyze columns and separate critical vs other
+        critical_columns = []
+        other_columns = []
+        all_column_details = {}
+        
+        for column in self.df.columns:
+            col_data = self.df[column]
+            data_type = classify_data_type(col_data)
+            quality_scores = calculate_quality_scores(col_data)
+            is_critical = is_critical_data_element(col_data)
+            
+            column_info = {
+                'name': column,
+                'data_type': data_type,
+                'total_count': len(col_data),
+                'null_count': col_data.isnull().sum(),
+                'distinct_count': col_data.nunique(),
+                'completeness': quality_scores['completeness'],
+                'uniqueness': quality_scores['uniqueness'],
+                'consistency': quality_scores['consistency'],
+                'is_critical': is_critical
+            }
+            
+            # Add numeric statistics if applicable
+            if pd.api.types.is_numeric_dtype(col_data):
+                column_info.update({
+                    'mean': round(col_data.mean(), 2) if not col_data.empty else None,
+                    'median': round(col_data.median(), 2) if not col_data.empty else None,
+                    'std': round(col_data.std(), 2) if not col_data.empty else None,
+                    'min': col_data.min() if not col_data.empty else None,
+                    'max': col_data.max() if not col_data.empty else None
+                })
+            
+            all_column_details[column] = column_info
+            
+            if is_critical:
+                critical_columns.append(column_info)
+            else:
+                other_columns.append(column_info)
+        
+        # Calculate overall data quality metrics
+        completeness_scores = [info['completeness'] for info in all_column_details.values()]
+        uniqueness_scores = [info['uniqueness'] for info in all_column_details.values()]
+        consistency_scores = [info['consistency'] for info in all_column_details.values()]
+        
+        overall_completeness = sum(completeness_scores) / len(completeness_scores) if completeness_scores else 0
+        overall_uniqueness = sum(uniqueness_scores) / len(uniqueness_scores) if uniqueness_scores else 0
+        overall_consistency = sum(consistency_scores) / len(consistency_scores) if consistency_scores else 0
+        
+        # Calculate column type distribution
+        type_distribution = {}
+        for column_info in all_column_details.values():
+            data_type = column_info['data_type']
+            type_distribution[data_type] = type_distribution.get(data_type, 0) + 1
+        
+        # Health status classification
+        def get_health_status(rate):
+            if rate >= 80:
+                return "Healthy"
+            elif rate >= 60:
+                return "Degraded"
+            else:
+                return "Critical"
+        
+        # Rule success distribution
+        rule_health_distribution = {"healthy": 0, "degraded": 0, "critical": 0}
+        for rate in df_results["success_rate"]:
+            if rate >= 80:
+                rule_health_distribution["healthy"] += 1
+            elif rate >= 60:
+                rule_health_distribution["degraded"] += 1
+            else:
+                rule_health_distribution["critical"] += 1
+        
+        # Compile comprehensive snapshot
+        comprehensive_snapshot = {
+            "metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "title": title,
+                "dataset_name": self.dataset_name
+            },
+            "key_metrics": {
+                "total_records": total_rows,
+                "total_columns": total_columns,
+                "total_cells": total_cells,
+                "null_cells": null_cells,
+                "data_completeness_rate": round(completeness_rate, 1),
+                "total_rules_executed": total_checks,
+                "overall_health_score": round(avg_pass_rate, 1),
+                "overall_health_status": get_health_status(avg_pass_rate)
+            },
+            "overall_data_quality": {
+                "completeness": round(overall_completeness, 1),
+                "uniqueness": round(overall_uniqueness, 1),
+                "consistency": round(overall_consistency, 1),
+                "combined_score": round((overall_completeness + overall_uniqueness + overall_consistency) / 3, 1)
+            },
+            "critical_data_elements": {
+                "count": len(critical_columns),
+                "columns": critical_columns
+            },
+            "other_fields": {
+                "count": len(other_columns),
+                "columns": other_columns
+            },
+            "column_type_distribution": type_distribution,
+            "rule_execution_summary": {
+                "total_rules": total_checks,
+                "healthy_rules": rule_health_distribution["healthy"],
+                "degraded_rules": rule_health_distribution["degraded"],
+                "critical_rules": rule_health_distribution["critical"],
+                "health_percentages": {
+                    "healthy": round((rule_health_distribution["healthy"] / total_checks) * 100, 1) if total_checks > 0 else 0,
+                    "degraded": round((rule_health_distribution["degraded"] / total_checks) * 100, 1) if total_checks > 0 else 0,
+                    "critical": round((rule_health_distribution["critical"] / total_checks) * 100, 1) if total_checks > 0 else 0
+                }
+            },
+            "detailed_results": df_results.to_dict('records') if not df_results.empty else []
+        }
+        
+        return comprehensive_snapshot
 
     # -------- HTML Report --------
     def generate_data_docs(self, title="Data Quality Report", dataset_name="Dataset"):
