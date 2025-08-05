@@ -52,12 +52,27 @@ def quality_check(df, expectations_json, title, dataset_name):
     )
     comprehensive_results = checker.get_comprehensive_results(title=title)
     
-    # Save to CSV for historical tracking
-    csv_filename = checker.save_comprehensive_results_to_csv(title=title, csv_filename="employee_data_quality_history.csv")
+    # Save to CSV for historical tracking - NEW: Now generates both summary and field-level CSVs
+    result = checker.save_comprehensive_results_to_csv(
+        title=title, 
+        csv_filename="employee_data_quality_history.csv",
+        include_field_summary=True  # This creates the secondary field-level CSV
+    )
+    
+    # Handle the return value (now returns tuple when include_field_summary=True)
+    if isinstance(result, tuple):
+        main_csv, field_csv = result
+        print(f"📊 Generated CSV files:")
+        print(f"   • Summary metrics: {main_csv}")
+        print(f"   • Field details: {field_csv}")
+    else:
+        main_csv = result
+        print(f"📊 Generated CSV file: {main_csv}")
     
     return data_docs, results, comprehensive_results
 
 data_docs, results, comprehensive_results = quality_check(my_df, expectations_json, "Simple Data Quality Report", "Employee Sample Data")
 
-with open("test_data_quality.html", "w", encoding="utf-8") as f:
+with open("simple_data_docs.html", "w", encoding="utf-8") as f:
     f.write(data_docs)
+
