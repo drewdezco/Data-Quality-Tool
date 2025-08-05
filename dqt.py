@@ -193,17 +193,55 @@ class DataQualityChecker:
             # Uniqueness Score
             uniqueness = (distinct_count / total_count) * 100 if total_count > 0 else 0
             
-            # Consistency Score
+            # Enhanced Consistency Score (matching the field summary logic)
             consistency = 100.0
-            if pd.api.types.is_object_dtype(col_data):
-                sample = col_data.dropna().head(100)
+            non_null_data = col_data.dropna()
+            
+            if len(non_null_data) == 0:
+                consistency = 0.0
+            elif pd.api.types.is_object_dtype(col_data):
+                sample = non_null_data.head(200)
+                issues_count = 0
+                total_checks = len(sample)
+                
                 if len(sample) > 0:
+                    # Check for mixed data types
                     type_counts = {}
                     for item in sample:
                         item_type = type(item).__name__
                         type_counts[item_type] = type_counts.get(item_type, 0) + 1
-                    most_common_type_count = max(type_counts.values()) if type_counts else 0
-                    consistency = (most_common_type_count / len(sample)) * 100
+                    
+                    if len(type_counts) > 1:
+                        minority_types = sum(count for type_name, count in type_counts.items() 
+                                           if type_name != max(type_counts, key=type_counts.get))
+                        if minority_types / len(sample) > 0.1:
+                            issues_count += minority_types
+                    
+                    # Check for email format issues
+                    if any('email' in str(col_data.name).lower() or '@' in str(val) for val in sample[:5]):
+                        import re
+                        email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+                        for val in sample:
+                            if '@' in str(val) and not email_pattern.match(str(val)):
+                                issues_count += 1
+                
+                consistency = max(0, 100 - (issues_count / total_checks * 100))
+                
+            elif pd.api.types.is_numeric_dtype(col_data):
+                if len(non_null_data) > 2:
+                    try:
+                        Q1 = non_null_data.quantile(0.25)
+                        Q3 = non_null_data.quantile(0.75)
+                        IQR = Q3 - Q1
+                        lower_bound = Q1 - 1.5 * IQR
+                        upper_bound = Q3 + 1.5 * IQR
+                        outliers = non_null_data[(non_null_data < lower_bound) | (non_null_data > upper_bound)]
+                        outlier_percentage = len(outliers) / len(non_null_data) * 100
+                        consistency = max(70, 100 - outlier_percentage * 2)
+                    except Exception:
+                        consistency = 95.0
+            else:
+                consistency = 95.0
             
             return {
                 'completeness': round(completeness, 1),
@@ -455,17 +493,97 @@ class DataQualityChecker:
             # Uniqueness Score
             uniqueness = (distinct_count / total_count) * 100 if total_count > 0 else 0
             
-            # Consistency Score (basic implementation)
+            # Enhanced Consistency Score
             consistency = 100.0
-            if pd.api.types.is_object_dtype(col_data):
-                sample = col_data.dropna().head(100)
+            non_null_data = col_data.dropna()
+            
+            if len(non_null_data) == 0:
+                consistency = 0.0  # No data to assess
+            elif pd.api.types.is_object_dtype(col_data):
+                # For text/object columns, check multiple consistency factors
+                sample = non_null_data.head(200)  # Larger sample for better assessment
+                issues_count = 0
+                total_checks = len(sample)
+                
                 if len(sample) > 0:
+                    # 1. Check for mixed data types
                     type_counts = {}
                     for item in sample:
                         item_type = type(item).__name__
                         type_counts[item_type] = type_counts.get(item_type, 0) + 1
-                    most_common_type_count = max(type_counts.values()) if type_counts else 0
-                    consistency = (most_common_type_count / len(sample)) * 100
+                    
+                    # If more than 10% are different types, penalize consistency
+                    if len(type_counts) > 1:
+                        minority_types = sum(count for type_name, count in type_counts.items() 
+                                           if type_name != max(type_counts, key=type_counts.get))
+                        if minority_types / len(sample) > 0.1:
+                            issues_count += minority_types
+                    
+                    # 2. Check for potential email format issues (if column might be email)
+                    if any('email' in str(col_data.name).lower() or '@' in str(val) for val in sample[:5]):
+                        import re
+                        email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+                        for val in sample:
+                            if '@' in str(val) and not email_pattern.match(str(val)):
+                                issues_count += 1
+                    
+                    # 3. Check for inconsistent string lengths (potential formatting issues)
+                    if len(sample) > 5:
+                        str_lengths = [len(str(val)) for val in sample]
+                        mean_length = sum(str_lengths) / len(str_lengths)
+                        # Flag values that are significantly different from mean length
+                        for length in str_lengths:
+                            if abs(length - mean_length) > mean_length * 0.5 and mean_length > 5:
+                                issues_count += 0.5  # Partial penalty for length inconsistency
+                    
+                    # 4. Check for mixed case patterns (if alphabetic)
+                    if sample.dtype == 'object':
+                        case_patterns = {'upper': 0, 'lower': 0, 'title': 0, 'mixed': 0}
+                        for val in sample:
+                            str_val = str(val)
+                            if str_val.isalpha():
+                                if str_val.isupper():
+                                    case_patterns['upper'] += 1
+                                elif str_val.islower():
+                                    case_patterns['lower'] += 1
+                                elif str_val.istitle():
+                                    case_patterns['title'] += 1
+                                else:
+                                    case_patterns['mixed'] += 1
+                        
+                        # If there's significant case inconsistency, penalize
+                        total_alpha = sum(case_patterns.values())
+                        if total_alpha > 5:
+                            patterns_used = sum(1 for count in case_patterns.values() if count > 0)
+                            if patterns_used > 2:  # More than 2 different case patterns
+                                issues_count += total_alpha * 0.1
+                
+                # Calculate consistency as percentage of consistent values
+                consistency = max(0, 100 - (issues_count / total_checks * 100))
+                
+            elif pd.api.types.is_numeric_dtype(col_data):
+                # For numeric columns, check for outliers and data distribution consistency
+                if len(non_null_data) > 2:
+                    try:
+                        Q1 = non_null_data.quantile(0.25)
+                        Q3 = non_null_data.quantile(0.75)
+                        IQR = Q3 - Q1
+                        
+                        # Define outliers using IQR method
+                        lower_bound = Q1 - 1.5 * IQR
+                        upper_bound = Q3 + 1.5 * IQR
+                        outliers = non_null_data[(non_null_data < lower_bound) | (non_null_data > upper_bound)]
+                        
+                        # Consistency reduced by percentage of outliers
+                        outlier_percentage = len(outliers) / len(non_null_data) * 100
+                        consistency = max(70, 100 - outlier_percentage * 2)  # Cap minimum at 70% for numeric
+                        
+                    except Exception:
+                        consistency = 95.0  # Default high score if calculation fails
+                        
+            else:
+                # For other data types (datetime, boolean, etc.)
+                consistency = 95.0  # Assume good consistency for properly typed columns
             
             return {
                 'completeness': round(completeness, 1),
