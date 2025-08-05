@@ -342,7 +342,7 @@ class DataQualityChecker:
         
         return comprehensive_snapshot
     
-    def save_comprehensive_results_to_csv(self, title: str = "Data Quality Report", csv_filename: str = "data_quality_history.csv"):
+    def save_comprehensive_results_to_csv(self, title: str = "Data Quality Report", csv_filename: str = "data_quality_history.csv", include_field_summary: bool = True):
         """
         Save comprehensive results to CSV file for historical analysis.
         Creates a new file or appends to existing one.
@@ -350,6 +350,7 @@ class DataQualityChecker:
         Args:
             title (str): Title for the data quality report
             csv_filename (str): Name of the CSV file to save/append to
+            include_field_summary (bool): If True, also saves field-level details to a separate CSV
         """
         import csv
         import os
@@ -379,6 +380,177 @@ class DataQualityChecker:
             writer.writerow(flattened_row)
         
         print(f"✅ Data quality results saved to: {csv_filename}")
+        
+        # Optionally save field-level summary to separate CSV
+        field_csv_filename = None
+        if include_field_summary:
+            # Generate field summary filename based on main filename
+            base_name = csv_filename.rsplit('.', 1)[0]  # Remove .csv extension
+            field_csv_filename = f"{base_name}_field_details.csv"
+            self.save_field_summary_to_csv(title=title, csv_filename=field_csv_filename)
+        
+        return csv_filename, field_csv_filename if include_field_summary else csv_filename
+    
+    def save_field_summary_to_csv(self, title: str = "Data Quality Report", csv_filename: str = "field_summary_history.csv"):
+        """
+        Save detailed field-level information to CSV file for historical analysis.
+        Creates a new file or appends to existing one. Each column becomes a separate row.
+        
+        Args:
+            title (str): Title for the data quality report
+            csv_filename (str): Name of the CSV file to save/append to
+            
+        Returns:
+            str: The filename that was created/updated
+        """
+        import csv
+        import os
+        from datetime import datetime
+        
+        if not hasattr(self, 'df') or self.df is None:
+            print("Error: No data available for field summary export.")
+            return None
+        
+        def classify_data_type(col_data):
+            """Classify data type with user-friendly names"""
+            if pd.api.types.is_datetime64_any_dtype(col_data):
+                return "Date/Time"
+            elif pd.api.types.is_bool_dtype(col_data):
+                return "Boolean"
+            elif pd.api.types.is_numeric_dtype(col_data):
+                if 'int' in str(col_data.dtype).lower():
+                    return "Integer"
+                elif 'float' in str(col_data.dtype).lower():
+                    return "Decimal"
+                else:
+                    return "Numeric"
+            elif pd.api.types.is_object_dtype(col_data):
+                sample = col_data.dropna().head(100)
+                if len(sample) > 0:
+                    bool_count = sum(1 for x in sample if isinstance(x, bool))
+                    if bool_count == len(sample):
+                        return "Boolean"
+                    bool_string_count = sum(1 for x in sample if str(x).lower() in ['true', 'false', '1', '0'])
+                    if bool_string_count == len(sample):
+                        return "Boolean"
+                    if all(isinstance(x, str) for x in sample):
+                        return "Text/String"
+                return "Text/String"
+            else:
+                dtype_str = str(col_data.dtype).lower()
+                if 'category' in dtype_str:
+                    return "Category"
+                else:
+                    return dtype_str.title()
+
+        def calculate_quality_scores(col_data):
+            """Calculate quality scores for a column"""
+            total_count = len(col_data)
+            null_count = col_data.isnull().sum()
+            distinct_count = col_data.nunique()
+            
+            # Completeness Score
+            completeness = ((total_count - null_count) / total_count) * 100 if total_count > 0 else 0
+            
+            # Uniqueness Score
+            uniqueness = (distinct_count / total_count) * 100 if total_count > 0 else 0
+            
+            # Consistency Score (basic implementation)
+            consistency = 100.0
+            if pd.api.types.is_object_dtype(col_data):
+                sample = col_data.dropna().head(100)
+                if len(sample) > 0:
+                    type_counts = {}
+                    for item in sample:
+                        item_type = type(item).__name__
+                        type_counts[item_type] = type_counts.get(item_type, 0) + 1
+                    most_common_type_count = max(type_counts.values()) if type_counts else 0
+                    consistency = (most_common_type_count / len(sample)) * 100
+            
+            return {
+                'completeness': round(completeness, 1),
+                'uniqueness': round(uniqueness, 1),
+                'consistency': round(consistency, 1)
+            }
+
+        def is_critical_data_element(col_data):
+            """Determine if a column is a critical data element"""
+            total_count = len(col_data)
+            null_count = col_data.isnull().sum()
+            completeness = ((total_count - null_count) / total_count) * 100 if total_count > 0 else 0
+            data_density = (total_count - null_count) / total_count if total_count > 0 else 0
+            is_critical = (completeness >= 80 and data_density >= 0.7 and null_count < total_count * 0.5)
+            return is_critical
+        
+        # Generate timestamp
+        timestamp = datetime.now().isoformat()
+        
+        # Prepare field-level data
+        field_rows = []
+        
+        for column in self.df.columns:
+            col_data = self.df[column]
+            data_type = classify_data_type(col_data)
+            quality_scores = calculate_quality_scores(col_data)
+            is_critical = is_critical_data_element(col_data)
+            
+            # Base row data
+            row = {
+                'timestamp': timestamp,
+                'title': title,
+                'dataset_name': getattr(self, 'dataset_name', 'Unknown Dataset'),
+                'column_name': column,
+                'data_type': data_type,
+                'total_count': len(col_data),
+                'null_count': col_data.isnull().sum(),
+                'distinct_count': col_data.nunique(),
+                'completeness': quality_scores['completeness'],
+                'uniqueness': quality_scores['uniqueness'],
+                'consistency': quality_scores['consistency'],
+                'is_critical': is_critical,
+                'mean': '',
+                'median': '',
+                'std': '',
+                'min': '',
+                'max': ''
+            }
+            
+            # Add statistical measures for numeric columns
+            if pd.api.types.is_numeric_dtype(col_data):
+                try:
+                    numeric_data = col_data.dropna()
+                    if len(numeric_data) > 0:
+                        row['mean'] = round(numeric_data.mean(), 2)
+                        row['median'] = round(numeric_data.median(), 2)
+                        row['std'] = round(numeric_data.std(), 2)
+                        row['min'] = numeric_data.min()
+                        row['max'] = numeric_data.max()
+                except Exception:
+                    pass  # Keep empty values if calculation fails
+            
+            field_rows.append(row)
+        
+        # Check if file exists to determine if we need headers
+        file_exists = os.path.exists(csv_filename)
+        
+        # Write to CSV
+        with open(csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
+            if field_rows:
+                fieldnames = field_rows[0].keys()
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                
+                # Write header only if file is new
+                if not file_exists:
+                    writer.writeheader()
+                
+                # Write all field rows
+                writer.writerows(field_rows)
+        
+        print(f"✅ Field summary data saved to: {csv_filename}")
+        print(f"   📊 Exported details for {len(field_rows)} columns")
+        critical_count = sum(1 for row in field_rows if row['is_critical'])
+        print(f"   🔑 Critical elements: {critical_count}, Other fields: {len(field_rows) - critical_count}")
+        
         return csv_filename
     
     def _flatten_comprehensive_results(self, results):
