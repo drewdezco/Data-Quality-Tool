@@ -51,6 +51,10 @@ def quality_check(df, expectations_json, title, dataset_name):
         dataset_name=dataset_name
     )
     comprehensive_results = checker.get_comprehensive_results(title=title)
+    
+    # Save to CSV for historical tracking
+    csv_filename = checker.save_comprehensive_results_to_csv(title=title, csv_filename="employee_data_quality_history.csv")
+    
     return data_docs, results, comprehensive_results
 
 data_docs, results, comprehensive_results = quality_check(my_df, expectations_json, "Simple Data Quality Report", "Employee Sample Data")
