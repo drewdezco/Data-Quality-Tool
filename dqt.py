@@ -341,6 +341,139 @@ class DataQualityChecker:
         }
         
         return comprehensive_snapshot
+    
+    def save_comprehensive_results_to_csv(self, title: str = "Data Quality Report", csv_filename: str = "data_quality_history.csv"):
+        """
+        Save comprehensive results to CSV file for historical analysis.
+        Creates a new file or appends to existing one.
+        
+        Args:
+            title (str): Title for the data quality report
+            csv_filename (str): Name of the CSV file to save/append to
+        """
+        import csv
+        import os
+        
+        # Get comprehensive results
+        results = self.get_comprehensive_results(title=title)
+        
+        if "error" in results:
+            print(f"Error: {results['error']}")
+            return
+        
+        # Flatten the results into a single row
+        flattened_row = self._flatten_comprehensive_results(results)
+        
+        # Check if file exists to determine if we need headers
+        file_exists = os.path.exists(csv_filename)
+        
+        # Write to CSV
+        with open(csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
+            fieldnames = flattened_row.keys()
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            # Write header only if file is new
+            if not file_exists:
+                writer.writeheader()
+            
+            writer.writerow(flattened_row)
+        
+        print(f"✅ Data quality results saved to: {csv_filename}")
+        return csv_filename
+    
+    def _flatten_comprehensive_results(self, results):
+        """
+        Flatten the nested comprehensive results into a single dictionary for CSV export.
+        """
+        flattened = {}
+        
+        # Metadata
+        flattened.update({
+            'timestamp': results['metadata']['timestamp'],
+            'title': results['metadata']['title'],
+            'dataset_name': results['metadata']['dataset_name']
+        })
+        
+        # Key metrics
+        key_metrics = results['key_metrics']
+        flattened.update({
+            'total_records': key_metrics['total_records'],
+            'total_columns': key_metrics['total_columns'],
+            'total_cells': key_metrics['total_cells'],
+            'null_cells': key_metrics['null_cells'],
+            'data_completeness_rate': key_metrics['data_completeness_rate'],
+            'total_rules_executed': key_metrics['total_rules_executed'],
+            'overall_health_score': key_metrics['overall_health_score'],
+            'overall_health_status': key_metrics['overall_health_status']
+        })
+        
+        # Overall data quality
+        quality = results['overall_data_quality']
+        flattened.update({
+            'overall_completeness': quality['completeness'],
+            'overall_uniqueness': quality['uniqueness'],
+            'overall_consistency': quality['consistency'],
+            'combined_quality_score': quality['combined_score']
+        })
+        
+        # Critical data elements and other fields counts
+        flattened.update({
+            'critical_elements_count': results['critical_data_elements']['count'],
+            'other_fields_count': results['other_fields']['count']
+        })
+        
+        # Rule execution summary
+        rule_summary = results['rule_execution_summary']
+        flattened.update({
+            'healthy_rules_count': rule_summary['healthy_rules'],
+            'degraded_rules_count': rule_summary['degraded_rules'],
+            'critical_rules_count': rule_summary['critical_rules'],
+            'healthy_rules_percentage': rule_summary['health_percentages']['healthy'],
+            'degraded_rules_percentage': rule_summary['health_percentages']['degraded'],
+            'critical_rules_percentage': rule_summary['health_percentages']['critical']
+        })
+        
+        # Column type distribution (flatten into separate columns)
+        type_dist = results['column_type_distribution']
+        for data_type, count in type_dist.items():
+            flattened[f'columns_{data_type.lower().replace("/", "_").replace(" ", "_")}_count'] = count
+        
+        # Calculate averages for critical and other fields
+        if results['critical_data_elements']['columns']:
+            critical_completeness = [col['completeness'] for col in results['critical_data_elements']['columns']]
+            critical_uniqueness = [col['uniqueness'] for col in results['critical_data_elements']['columns']]
+            critical_consistency = [col['consistency'] for col in results['critical_data_elements']['columns']]
+            
+            flattened.update({
+                'critical_avg_completeness': round(sum(critical_completeness) / len(critical_completeness), 1),
+                'critical_avg_uniqueness': round(sum(critical_uniqueness) / len(critical_uniqueness), 1),
+                'critical_avg_consistency': round(sum(critical_consistency) / len(critical_consistency), 1)
+            })
+        else:
+            flattened.update({
+                'critical_avg_completeness': 0,
+                'critical_avg_uniqueness': 0,
+                'critical_avg_consistency': 0
+            })
+        
+        if results['other_fields']['columns']:
+            other_completeness = [col['completeness'] for col in results['other_fields']['columns']]
+            other_uniqueness = [col['uniqueness'] for col in results['other_fields']['columns']]
+            other_consistency = [col['consistency'] for col in results['other_fields']['columns']]
+            
+            flattened.update({
+                'other_avg_completeness': round(sum(other_completeness) / len(other_completeness), 1),
+                'other_avg_uniqueness': round(sum(other_uniqueness) / len(other_uniqueness), 1),
+                'other_avg_consistency': round(sum(other_consistency) / len(other_consistency), 1)
+            })
+        else:
+            flattened.update({
+                'other_avg_completeness': 0,
+                'other_avg_uniqueness': 0,
+                'other_avg_consistency': 0
+            })
+        
+        return flattened
 
     # -------- HTML Report --------
     def generate_data_docs(self, title="Data Quality Report", dataset_name="Dataset"):
