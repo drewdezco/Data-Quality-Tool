@@ -708,22 +708,26 @@ class DataQualityChecker:
         
         # Health status classification
         def get_health_status(rate):
-            if rate >= 80:
-                return "Healthy"
-            elif rate >= 60:
-                return "Degraded"
+            if rate >= 90:
+                return "Excellent"
+            elif rate >= 75:
+                return "Good"
+            elif rate >= 50:
+                return "Fair"
             else:
-                return "Critical"
+                return "Poor"
         
         # Rule success distribution
-        rule_health_distribution = {"healthy": 0, "degraded": 0, "critical": 0}
+        rule_health_distribution = {"excellent": 0, "good": 0, "fair": 0, "poor": 0}
         for rate in df_results["success_rate"]:
-            if rate >= 80:
-                rule_health_distribution["healthy"] += 1
-            elif rate >= 60:
-                rule_health_distribution["degraded"] += 1
+            if rate >= 90:
+                rule_health_distribution["excellent"] += 1
+            elif rate >= 75:
+                rule_health_distribution["good"] += 1
+            elif rate >= 50:
+                rule_health_distribution["fair"] += 1
             else:
-                rule_health_distribution["critical"] += 1
+                rule_health_distribution["poor"] += 1
         
         # Compile comprehensive snapshot
         comprehensive_snapshot = {
@@ -759,13 +763,15 @@ class DataQualityChecker:
             "column_type_distribution": type_distribution,
             "rule_execution_summary": {
                 "total_rules": total_checks,
-                "healthy_rules": rule_health_distribution["healthy"],
-                "degraded_rules": rule_health_distribution["degraded"],
-                "critical_rules": rule_health_distribution["critical"],
+                "excellent_rules": rule_health_distribution["excellent"],
+                "good_rules": rule_health_distribution["good"],
+                "fair_rules": rule_health_distribution["fair"],
+                "poor_rules": rule_health_distribution["poor"],
                 "health_percentages": {
-                    "healthy": round((rule_health_distribution["healthy"] / total_checks) * 100, 1) if total_checks > 0 else 0,
-                    "degraded": round((rule_health_distribution["degraded"] / total_checks) * 100, 1) if total_checks > 0 else 0,
-                    "critical": round((rule_health_distribution["critical"] / total_checks) * 100, 1) if total_checks > 0 else 0
+                    "excellent": round((rule_health_distribution["excellent"] / total_checks) * 100, 1) if total_checks > 0 else 0,
+                    "good": round((rule_health_distribution["good"] / total_checks) * 100, 1) if total_checks > 0 else 0,
+                    "fair": round((rule_health_distribution["fair"] / total_checks) * 100, 1) if total_checks > 0 else 0,
+                    "poor": round((rule_health_distribution["poor"] / total_checks) * 100, 1) if total_checks > 0 else 0
                 }
             },
             "detailed_results": df_results.to_dict('records') if not df_results.empty else []
@@ -1108,12 +1114,14 @@ class DataQualityChecker:
         # Rule execution summary
         rule_summary = results['rule_execution_summary']
         flattened.update({
-            'healthy_rules_count': rule_summary['healthy_rules'],
-            'degraded_rules_count': rule_summary['degraded_rules'],
-            'critical_rules_count': rule_summary['critical_rules'],
-            'healthy_rules_percentage': rule_summary['health_percentages']['healthy'],
-            'degraded_rules_percentage': rule_summary['health_percentages']['degraded'],
-            'critical_rules_percentage': rule_summary['health_percentages']['critical']
+            'excellent_rules_count': rule_summary['excellent_rules'],
+            'good_rules_count': rule_summary['good_rules'],
+            'fair_rules_count': rule_summary['fair_rules'],
+            'poor_rules_count': rule_summary['poor_rules'],
+            'excellent_rules_percentage': rule_summary['health_percentages']['excellent'],
+            'good_rules_percentage': rule_summary['health_percentages']['good'],
+            'fair_rules_percentage': rule_summary['health_percentages']['fair'],
+            'poor_rules_percentage': rule_summary['health_percentages']['poor']
         })
         
         # Column type distribution (flatten into separate columns)
@@ -1167,37 +1175,43 @@ class DataQualityChecker:
 
         # Determine textual health status based on avg_pass_rate
         def get_health_status(rate):
-            if rate >= 80:
-                return "Healthy"
-            elif rate >= 60:
-                return "Degraded"
+            if rate >= 90:
+                return "Excellent"
+            elif rate >= 75:
+                return "Good"
+            elif rate >= 50:
+                return "Fair"
             else:
-                return "Critical"
+                return "Poor"
 
         status_text = get_health_status(avg_pass_rate)
 
         # Classify each rule's success rate into health categories for the pie chart
         categories = {
-            "healthy": 0,
-            "degraded": 0,
-            "critical": 0
+            "excellent": 0,
+            "good": 0,
+            "fair": 0,
+            "poor": 0
         }
 
         for rate in df_results["success_rate"]:
-            if rate >= 80:
-                categories["healthy"] += 1
-            elif rate >= 60:
-                categories["degraded"] += 1
+            if rate >= 90:
+                categories["excellent"] += 1
+            elif rate >= 75:
+                categories["good"] += 1
+            elif rate >= 50:
+                categories["fair"] += 1
             else:
-                categories["critical"] += 1
+                categories["poor"] += 1
 
         if total_checks == 0:
-            health_distribution = [0, 0, 0]
+            health_distribution = [0, 0, 0, 0]
         else:
             health_distribution = [
-                round((categories["healthy"] / total_checks) * 100, 2),
-                round((categories["degraded"] / total_checks) * 100, 2),
-                round((categories["critical"] / total_checks) * 100, 2)
+                round((categories["excellent"] / total_checks) * 100, 2),
+                round((categories["good"] / total_checks) * 100, 2),
+                round((categories["fair"] / total_checks) * 100, 2),
+                round((categories["poor"] / total_checks) * 100, 2)
             ]
 
         # Prepare data for bar chart
@@ -1212,11 +1226,13 @@ class DataQualityChecker:
 
         def badge_color(rate):
             if rate >= 90:
-                return "badge-green"
+                return "badge-excellent"
+            elif rate >= 75:
+                return "badge-good"
             elif rate >= 50:
-                return "badge-yellow"
+                return "badge-fair"
             else:
-                return "badge-red"
+                return "badge-poor"
 
         def format_details_human_readable(details):
             """Convert JSON details to human-readable format"""
@@ -1255,7 +1271,17 @@ class DataQualityChecker:
                 if 'total' in details:
                     readable_parts.append(f"<b>Total records:</b> {details['total']}")
                 if 'allowed_values' in details:
-                    readable_parts.append(f"<b>Allowed values:</b> <span class='allowed-set'>{', '.join(map(str, details['allowed_values']))}</span>")
+                    allowed_values = details['allowed_values']
+                    if isinstance(allowed_values, dict):
+                        # For multi-column validations, show all allowed values from all columns
+                        all_values = set()
+                        for column_values in allowed_values.values():
+                            if isinstance(column_values, (list, tuple)):
+                                all_values.update(column_values)
+                        readable_parts.append(f"<b>Allowed values:</b> <span class='allowed-set'>{', '.join(map(str, sorted(all_values)))}</span>")
+                    else:
+                        # For single-column validations
+                        readable_parts.append(f"<b>Allowed values:</b> <span class='allowed-set'>{', '.join(map(str, allowed_values))}</span>")
                 if 'pattern' in details:
                     readable_parts.append(f"<b>Pattern:</b> <span class='pattern-highlight'>{details['pattern']}</span>")
                 if 'range' in details:
@@ -1270,7 +1296,7 @@ class DataQualityChecker:
 
         def rule_label(rule):
             # Capitalize and prettify rule names for section headers
-            return rule.replace('_', ' ').capitalize()
+            return rule.replace('_', ' ').title()
         
         def get_validation_description(rule):
             """Get a user-friendly description for each validation rule"""
@@ -1446,17 +1472,15 @@ class DataQualityChecker:
         summary_cards = [
             {"title": "Total Records", "value": f"{total_rows:,}", "icon": "📊", "color": "#2d3e50"},
             {"title": "Total Columns", "value": f"{total_columns:,}", "icon": "📋", "color": "#34495e"},
-            {"title": "Data Completeness", "value": f"{completeness_rate:.1f}%", "icon": "✅", "color": "#27ae60"},
-            {"title": "Avg Uniqueness", "value": f"{avg_uniqueness:.1f}%", "icon": "🔍", "color": "#3498db"},
-            {"title": "Total Rules", "value": f"{total_checks:,}", "icon": "⚡", "color": "#e74c3c"},
-            {"title": "Overall Health", "value": f"{avg_pass_rate:.1f}%", "icon": "🏥", "color": "#f39c12"}
+            {"title": "Total Rules", "value": f"{total_checks:,}", "icon": "⚡", "color": "#e74c3c"}
         ]
         
         # Enhanced health distribution with better colors
         health_distribution = [
-            round((categories["healthy"] / total_checks) * 100, 2) if total_checks > 0 else 0,
-            round((categories["degraded"] / total_checks) * 100, 2) if total_checks > 0 else 0,
-            round((categories["critical"] / total_checks) * 100, 2) if total_checks > 0 else 0
+            round((categories["excellent"] / total_checks) * 100, 2) if total_checks > 0 else 0,
+            round((categories["good"] / total_checks) * 100, 2) if total_checks > 0 else 0,
+            round((categories["fair"] / total_checks) * 100, 2) if total_checks > 0 else 0,
+            round((categories["poor"] / total_checks) * 100, 2) if total_checks > 0 else 0
         ]
         
         # Enhanced bar chart data with better styling
@@ -1738,9 +1762,10 @@ class DataQualityChecker:
                     color: #fff;
                     font-weight: bold;
                 }}
-                .badge-green {{ background-color: #28a745; }}
-                .badge-yellow {{ background-color: #ffc107; color: #333; }}
-                .badge-red {{ background-color: #dc3545; }}
+                .badge-excellent {{ background-color: #28a745; }}
+                .badge-good {{ background-color: #17a2b8; }}
+                .badge-fair {{ background-color: #ffc107; color: #333; }}
+                .badge-poor {{ background-color: #dc3545; }}
                 .toggle-btn {{
                     background: var(--header-bg);
                     border: none;
@@ -2421,6 +2446,61 @@ class DataQualityChecker:
                     text-align: center;
                 }}
                 
+                /* Health Key Styling */
+                .health-key-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 20px;
+                    padding: 10px 0;
+                }}
+                .key-item {{
+                    display: flex;
+                    align-items: center;
+                    padding: 15px 20px;
+                    background: var(--bg-tertiary);
+                    border-radius: 8px;
+                    border: 1px solid var(--border-color);
+                    transition: transform 0.2s, box-shadow 0.2s, background-color 0.3s, border-color 0.3s;
+                }}
+                .key-item:hover {{
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                }}
+                .key-color {{
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 50%;
+                    margin-right: 15px;
+                    flex-shrink: 0;
+                }}
+                .key-item.excellent .key-color {{
+                    background-color: #28a745;
+                }}
+                .key-item.good .key-color {{
+                    background-color: #17a2b8;
+                }}
+                .key-item.fair .key-color {{
+                    background-color: #ffc107;
+                }}
+                .key-item.poor .key-color {{
+                    background-color: #dc3545;
+                }}
+                .key-content {{
+                    flex: 1;
+                }}
+                .key-label {{
+                    font-weight: 600;
+                    font-size: 1.1em;
+                    color: var(--text-primary);
+                    margin-bottom: 2px;
+                    transition: color 0.3s;
+                }}
+                .key-range {{
+                    font-size: 0.9em;
+                    color: var(--text-muted);
+                    transition: color 0.3s;
+                }}
+                
                 /* Responsive Design */
                 @media (max-width: 768px) {{
                     .summary-cards-grid {{
@@ -2429,9 +2509,18 @@ class DataQualityChecker:
                     .charts-grid {{
                         grid-template-columns: 1fr;
                     }}
+                    .health-key-grid {{
+                        grid-template-columns: 1fr 1fr;
+                        gap: 15px;
+                    }}
                     .dashboard-section {{
                         padding: 15px;
                         margin-bottom: 20px;
+                    }}
+                }}
+                @media (max-width: 480px) {{
+                    .health-key-grid {{
+                        grid-template-columns: 1fr;
                     }}
                 }}
             </style>
@@ -2468,6 +2557,41 @@ class DataQualityChecker:
                             <div class="chart-container">
                                 <h4>Success Rate by Column</h4>
                                 <canvas id="barChart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- Health Status Key (integrated within charts section) -->
+                        <div style="margin-top: 30px;">
+                            <h4 style="margin-bottom: 15px; color: var(--text-primary); font-size: 1.2em; font-weight: 600;">🔑 Health Status Key</h4>
+                            <div class="health-key-grid">
+                                <div class="key-item excellent">
+                                    <div class="key-color"></div>
+                                    <div class="key-content">
+                                        <div class="key-label">Excellent</div>
+                                        <div class="key-range">90% - 100%</div>
+                                    </div>
+                                </div>
+                                <div class="key-item good">
+                                    <div class="key-color"></div>
+                                    <div class="key-content">
+                                        <div class="key-label">Good</div>
+                                        <div class="key-range">75% - 89%</div>
+                                    </div>
+                                </div>
+                                <div class="key-item fair">
+                                    <div class="key-color"></div>
+                                    <div class="key-content">
+                                        <div class="key-label">Fair</div>
+                                        <div class="key-range">50% - 74%</div>
+                                    </div>
+                                </div>
+                                <div class="key-item poor">
+                                    <div class="key-color"></div>
+                                    <div class="key-content">
+                                        <div class="key-label">Poor</div>
+                                        <div class="key-range">Below 50%</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2507,10 +2631,10 @@ class DataQualityChecker:
                 new Chart(ctx, {{
                     type: 'pie',
                     data: {{
-                        labels: ['Healthy', 'Degraded', 'Critical'],
+                        labels: ['Excellent', 'Good', 'Fair', 'Poor'],
                         datasets: [{{
                             data: {health_distribution},
-                            backgroundColor: ['#28a745', '#ffc107', '#dc3545']
+                            backgroundColor: ['#28a745', '#17a2b8', '#ffc107', '#dc3545']
                         }}]
                     }},
                     options: {{
@@ -3040,33 +3164,35 @@ class DataQualityChecker:
     def _get_bar_color(self, rate):
         """Get color for bar chart based on success rate"""
         if rate >= 90:
-            return '#28a745'
+            return '#28a745'  # Excellent - Green
+        elif rate >= 75:
+            return '#17a2b8'  # Good - Blue
         elif rate >= 50:
-            return '#ffc107'
+            return '#ffc107'  # Fair - Yellow
         else:
-            return '#dc3545'
+            return '#dc3545'  # Poor - Red
 
     def _get_enhanced_bar_color(self, rate):
         """Get enhanced color for bar chart based on success rate"""
         if rate >= 90:
-            return '#27ae60'
-        elif rate >= 70:
-            return '#f39c12'
+            return '#27ae60'  # Excellent - Green
+        elif rate >= 75:
+            return '#17a2b8'  # Good - Blue  
         elif rate >= 50:
-            return '#3498db'
+            return '#f39c12'  # Fair - Orange
         else:
-            return '#dc3545'
+            return '#dc3545'  # Poor - Red
 
     def _get_enhanced_border_color(self, rate):
         """Get enhanced border color for bar chart based on success rate"""
         if rate >= 90:
-            return '#27ae60'
-        elif rate >= 70:
-            return '#f39c12'
+            return '#27ae60'  # Excellent - Green
+        elif rate >= 75:
+            return '#17a2b8'  # Good - Blue
         elif rate >= 50:
-            return '#3498db'
+            return '#f39c12'  # Fair - Orange
         else:
-            return '#dc3545'
+            return '#dc3545'  # Poor - Red
 
     def _darken_color(self, hex_color, amount=0.2):
         """Darken a hex color by a given amount."""
