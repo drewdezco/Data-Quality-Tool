@@ -1418,24 +1418,41 @@ class DataQualityChecker:
         # Calculate data type distribution with user-friendly names
         def get_user_friendly_dtype(dtype_name):
             """Convert pandas dtype to user-friendly name"""
-            dtype_str = str(dtype_name).lower()
-            if 'object' in dtype_str:
-                return "Text/String"
-            elif 'int' in dtype_str:
-                return "Integer"
-            elif 'float' in dtype_str:
-                return "Decimal"
-            elif 'bool' in dtype_str:
-                return "Boolean"
-            elif 'datetime' in dtype_str:
-                return "Date/Time"
-            elif 'category' in dtype_str:
-                return "Category"
-            else:
-                return dtype_str.title()
+            try:
+                dtype_str = str(dtype_name).lower()
+                if 'object' in dtype_str:
+                    return "Text/String"
+                elif 'int' in dtype_str:
+                    return "Integer"
+                elif 'float' in dtype_str:
+                    return "Decimal"
+                elif 'bool' in dtype_str:
+                    return "Boolean"
+                elif 'datetime' in dtype_str:
+                    return "Date/Time"
+                elif 'category' in dtype_str:
+                    return "Category"
+                elif dtype_str and len(dtype_str) > 0:
+                    return dtype_str.title()
+                else:
+                    return "Unknown"
+            except Exception:
+                return "Unknown"
         
-        dtype_counts = self.df.dtypes.value_counts()
-        dtype_distribution = {get_user_friendly_dtype(dtype): count for dtype, count in dtype_counts.items()}
+        # Calculate data type distribution by examining each column individually
+        dtype_distribution = {}
+        for col in self.df.columns:
+            try:
+                dtype_str = get_user_friendly_dtype(self.df[col].dtype)
+                # Ensure we have a valid string
+                if dtype_str and isinstance(dtype_str, str):
+                    dtype_distribution[dtype_str] = dtype_distribution.get(dtype_str, 0) + 1
+                else:
+                    # Fallback for any undefined cases
+                    dtype_distribution["Mixed/Other"] = dtype_distribution.get("Mixed/Other", 0) + 1
+            except Exception:
+                # Fallback for any errors
+                dtype_distribution["Mixed/Other"] = dtype_distribution.get("Mixed/Other", 0) + 1
         
         # Calculate overall uniqueness score
         uniqueness_scores = []
@@ -1471,8 +1488,8 @@ class DataQualityChecker:
         # Enhanced summary cards data
         summary_cards = [
             {"title": "Total Records", "value": f"{total_rows:,}", "icon": "📊", "color": "#2d3e50"},
-            {"title": "Total Columns", "value": f"{total_columns:,}", "icon": "📋", "color": "#34495e"},
-            {"title": "Total Rules", "value": f"{total_checks:,}", "icon": "⚡", "color": "#e74c3c"}
+            {"title": "Total Columns", "value": f"{total_columns:,}", "icon": "📋", "color": "#2d3e50"},
+            {"title": "Total Rules", "value": f"{total_checks:,}", "icon": "⚡", "color": "#2d3e50"}
         ]
         
         # Enhanced health distribution with better colors
@@ -1547,11 +1564,18 @@ class DataQualityChecker:
         </div>
         """
         
-        # Generate data type distribution
+        # Generate data type distribution with safety checks
+        # Filter out any empty or None keys
+        clean_dtype_distribution = {k: v for k, v in dtype_distribution.items() if k and isinstance(k, str) and v > 0}
+        
+        # Ensure we have at least some data
+        if not clean_dtype_distribution:
+            clean_dtype_distribution = {"No Data": 1}
+        
         dtype_chart_data = {
-            'labels': list(dtype_distribution.keys()),
+            'labels': list(clean_dtype_distribution.keys()),
             'datasets': [{
-                'data': list(dtype_distribution.values()),
+                'data': list(clean_dtype_distribution.values()),
                 'backgroundColor': ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'],
                 'borderWidth': 2,
                 'borderColor': '#fff'
@@ -2301,7 +2325,6 @@ class DataQualityChecker:
                     transition: transform 0.2s, box-shadow 0.2s;
                 }}
                 .summary-card:hover {{
-                    transform: translateY(-3px);
                     box-shadow: 0 6px 16px rgba(0,0,0,0.15);
                 }}
                 .card-icon {{
@@ -2409,7 +2432,6 @@ class DataQualityChecker:
                     transition: transform 0.2s, box-shadow 0.2s, background-color 0.3s, border-color 0.3s;
                 }}
                 .quality-metric:hover {{
-                    transform: translateY(-2px);
                     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                 }}
                 .quality-metric.overall-score {{
@@ -2463,7 +2485,6 @@ class DataQualityChecker:
                     transition: transform 0.2s, box-shadow 0.2s, background-color 0.3s, border-color 0.3s;
                 }}
                 .key-item:hover {{
-                    transform: translateY(-2px);
                     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                 }}
                 .key-color {{
@@ -2498,6 +2519,14 @@ class DataQualityChecker:
                 .key-range {{
                     font-size: 0.9em;
                     color: var(--text-muted);
+                    margin-bottom: 4px;
+                    transition: color 0.3s;
+                }}
+                .key-description {{
+                    font-size: 0.85em;
+                    color: var(--text-secondary);
+                    font-style: italic;
+                    line-height: 1.3;
                     transition: color 0.3s;
                 }}
                 
@@ -2569,6 +2598,7 @@ class DataQualityChecker:
                                     <div class="key-content">
                                         <div class="key-label">Excellent</div>
                                         <div class="key-range">90% - 100%</div>
+                                        <div class="key-description">High quality data with minimal risk</div>
                                     </div>
                                 </div>
                                 <div class="key-item good">
@@ -2576,6 +2606,7 @@ class DataQualityChecker:
                                     <div class="key-content">
                                         <div class="key-label">Good</div>
                                         <div class="key-range">75% - 89%</div>
+                                        <div class="key-description">Reliable data with acceptable quality</div>
                                     </div>
                                 </div>
                                 <div class="key-item fair">
@@ -2583,6 +2614,7 @@ class DataQualityChecker:
                                     <div class="key-content">
                                         <div class="key-label">Fair</div>
                                         <div class="key-range">50% - 74%</div>
+                                        <div class="key-description">Moderate quality requiring attention</div>
                                     </div>
                                 </div>
                                 <div class="key-item poor">
@@ -2590,6 +2622,7 @@ class DataQualityChecker:
                                     <div class="key-content">
                                         <div class="key-label">Poor</div>
                                         <div class="key-range">Below 50%</div>
+                                        <div class="key-description">Low quality data with high risk</div>
                                     </div>
                                 </div>
                             </div>
@@ -2600,7 +2633,7 @@ class DataQualityChecker:
                     <div class="dashboard-section">
                         <h3 class="section-header">🔍 Data Type Analysis</h3>
                         <div class="chart-container">
-                            <h4>Column Types Distribution</h4>
+                            <h4>Data Types Distribution</h4>
                             <canvas id="dtypeChart"></canvas>
                         </div>
                     </div>
@@ -2642,11 +2675,24 @@ class DataQualityChecker:
                         maintainAspectRatio: false,
                         plugins: {{
                             legend: {{
-                                position: 'bottom'
+                                position: 'bottom',
+                                align: 'center',
+                                labels: {{
+                                    boxWidth: 12,
+                                    padding: 15,
+                                    usePointStyle: true
+                                }}
                             }},
                             title: {{
-                                display: true,
-                                text: 'Health Distribution'
+                                display: false
+                            }}
+                        }},
+                        layout: {{
+                            padding: {{
+                                top: 10,
+                                bottom: 10,
+                                left: 10,
+                                right: 10
                             }}
                         }}
                     }}
@@ -2683,12 +2729,7 @@ class DataQualityChecker:
                         }},
                         plugins: {{
                             title: {{
-                                display: true,
-                                text: 'Success Rate by Column',
-                                font: {{
-                                    size: 16,
-                                    weight: 'bold'
-                                }}
+                                display: false
                             }},
                             legend: {{
                                 display: false
@@ -2725,16 +2766,28 @@ class DataQualityChecker:
                     data: dtypeData,
                     options: {{
                         responsive: true,
+                        maintainAspectRatio: false,
                         scales: {{
                             y: {{
                                 beginAtZero: true,
-                                suggestedMax: suggestedMax
+                                suggestedMax: suggestedMax,
+                                ticks: {{
+                                    stepSize: 1
+                                }}
+                            }},
+                            x: {{
+                                ticks: {{
+                                    maxRotation: 45,
+                                    minRotation: 0
+                                }}
                             }}
                         }},
                         plugins: {{
                             title: {{
-                                display: true,
-                                text: 'Data Type Distribution'
+                                display: false
+                            }},
+                            legend: {{
+                                display: false
                             }}
                         }}
                     }}
@@ -2827,6 +2880,9 @@ class DataQualityChecker:
                         }});
                     }});
 
+                    // Get selected column name once at the top
+                    const selectedColumnName = document.getElementById('filterColumn').options[document.getElementById('filterColumn').selectedIndex].text;
+                    
                     rows.forEach(row => {{
                         let showRow = true;
                         
@@ -2851,18 +2907,39 @@ class DataQualityChecker:
                         
                         // Column and validation filters
                         if (filterColumn !== "0" || filterRule || filterStatus) {{
-                            const selectedColumnName = document.getElementById('filterColumn').options[document.getElementById('filterColumn').selectedIndex].text;
                             
                             // Find validation columns for the selected column and rule
                             let validationColumnIndex = -1;
                             if (filterColumn !== "0" && filterRule && filterRule !== "") {{
                                 // Look for the specific validation column
-                                const validationColumnName = selectedColumnName + '_' + filterRule;
+                                let validationColumnName;
+                                
+                                // Handle Levenshtein similarity columns specially
+                                if (filterRule.toLowerCase().includes('levenshtein similarity')) {{
+                                    // For Levenshtein, look for "Levenshtein (ColumnName:" pattern
+                                    validationColumnName = 'levenshtein (' + selectedColumnName.toLowerCase() + ':';
+                                }} else {{
+                                    // Standard validation columns
+                                    validationColumnName = selectedColumnName + '_' + filterRule;
+                                }}
+                                
                                 for (let i = 0; i < row.cells.length; i++) {{
                                     const headerCell = table.querySelector('thead tr th:nth-child(' + (i + 1) + ')');
-                                    if (headerCell && headerCell.textContent.toLowerCase().includes(validationColumnName.toLowerCase().replace('_', ' '))) {{
-                                        validationColumnIndex = i;
-                                        break;
+                                    if (headerCell) {{
+                                        const headerText = headerCell.textContent.toLowerCase();
+                                        if (filterRule.toLowerCase().includes('levenshtein similarity')) {{
+                                            // For Levenshtein, check if header contains the pattern
+                                            if (headerText.includes(validationColumnName)) {{
+                                                validationColumnIndex = i;
+                                                break;
+                                            }}
+                                        }} else {{
+                                            // Standard validation column matching
+                                            if (headerText.includes(validationColumnName.toLowerCase().replace('_', ' '))) {{
+                                                validationColumnIndex = i;
+                                                break;
+                                            }}
+                                        }}
                                     }}
                                 }}
                             }}
@@ -2899,33 +2976,94 @@ class DataQualityChecker:
                                         const headerText = headerCell.textContent.toLowerCase().trim();
                                         const selectedText = selectedColumnName.toLowerCase().trim();
                                         
-                                        if (headerText.includes(selectedText)) {{
-                                            // Check if we should show this specific validation column based on rule filter
-                                            if (filterRule && filterRule !== "") {{
-                                                // Only show the specific validation rule column
-                                                const expectedValidationName = selectedText + '_' + filterRule.toLowerCase();
-                                                if (headerText.includes(expectedValidationName)) {{
-                                                    headerCell.style.display = '';
-                                                    validationCell.style.display = '';
-                                                }} else {{
-                                                    headerCell.style.display = 'none';
-                                                    validationCell.style.display = 'none';
-                                                }}
+                                        // Check if this validation column belongs to the selected data column
+                                        let shouldShow = false;
+                                        
+                                        if (filterRule && filterRule !== "") {{
+                                            // Show only the specific validation rule column
+                                            if (filterRule.toLowerCase().includes('levenshtein similarity')) {{
+                                                // For Levenshtein columns, check if it contains the selected column name
+                                                const levenshteinPattern1 = 'levenshtein (' + selectedText + ':';
+                                                const levenshteinPattern2 = ':' + selectedText + ')';
+                                                shouldShow = headerText.includes(levenshteinPattern1) || headerText.includes(levenshteinPattern2);
                                             }} else {{
-                                                // Show all validation columns for this column when no specific rule is selected
-                                                headerCell.style.display = '';
-                                                validationCell.style.display = '';
+                                                // For specific rule filtering, check if the header contains both the column and the rule
+                                                const ruleText = filterRule.toLowerCase().replace(/ /g, ' ');
+                                                
+                                                // Check if this validation column applies to our selected column AND matches the rule
+                                                let columnMatches = false;
+                                                let ruleMatches = false;
+                                                
+                                                // Check if column matches (either single column or multi-column)
+                                                if (headerText.startsWith(selectedText + '_')) {{
+                                                    // Single column validation
+                                                    columnMatches = true;
+                                                }} else if (headerText.includes(',')) {{
+                                                    // Multi-column validation - check if our column is in the list
+                                                    const lastUnderscoreIndex = headerText.lastIndexOf('_');
+                                                    if (lastUnderscoreIndex > 0) {{
+                                                        const columnsPart = headerText.substring(0, lastUnderscoreIndex);
+                                                        const columns = columnsPart.split(',').map(col => col.trim());
+                                                        columnMatches = columns.includes(selectedText);
+                                                    }}
+                                                }}
+                                                
+                                                // Check if rule matches
+                                                if (columnMatches) {{
+                                                    ruleMatches = headerText.includes(ruleText);
+                                                }}
+                                                
+                                                shouldShow = columnMatches && ruleMatches;
                                             }}
                                         }} else {{
-                                            // Hide validation columns for other columns
+                                            // Show all validation columns for this column when no specific rule is selected
+                                            if (headerText.startsWith('levenshtein (')) {{
+                                                // For Levenshtein columns, check if either column in the pair matches
+                                                const levenshteinPattern1 = 'levenshtein (' + selectedText + ':';
+                                                const levenshteinPattern2 = ':' + selectedText + ')';
+                                                shouldShow = headerText.includes(levenshteinPattern1) || headerText.includes(levenshteinPattern2);
+                                            }} else {{
+                                                // Standard validation columns - check if it's a single-column validation for this column
+                                                // Single column format: "columnname_rule"
+                                                // Multi-column format: "col1, col2, col3_rule" 
+                                                
+                                                // First check if it's a single column validation
+                                                const singleColumnPattern = selectedText + '_';
+                                                if (headerText.startsWith(singleColumnPattern)) {{
+                                                    shouldShow = true;
+                                                }} else {{
+                                                    // For multi-column validations, show if the selected column is ANY participant
+                                                    const commaIndex = headerText.indexOf(',');
+                                                    if (commaIndex > 0) {{
+                                                        // Split the header text to get the column list part (before the last underscore + rule)
+                                                        const lastUnderscoreIndex = headerText.lastIndexOf('_');
+                                                        if (lastUnderscoreIndex > 0) {{
+                                                            const columnsPart = headerText.substring(0, lastUnderscoreIndex);
+                                                            // Split by comma and check if our column is in the list
+                                                            const columns = columnsPart.split(',').map(col => col.trim());
+                                                            shouldShow = columns.includes(selectedText);
+                                                        }} else {{
+                                                            shouldShow = false;
+                                                        }}
+                                                    }} else {{
+                                                        shouldShow = false;
+                                                    }}
+                                                }}
+                                            }}
+                                        }}
+                                        
+                                        if (shouldShow) {{
+                                            headerCell.style.display = '';
+                                            validationCell.style.display = '';
+                                        }} else {{
                                             headerCell.style.display = 'none';
                                             validationCell.style.display = 'none';
                                         }}
                                     }}
                                 }}
                             }} else {{
-                                // Show all columns when "All Columns" is selected
-                                for (let i = 0; i < row.cells.length; i++) {{
+                                // Show all data columns when "All Columns" is selected
+                                for (let i = 0; i < dataColumnCount; i++) {{
                                     const headerCell = table.querySelector('thead tr th:nth-child(' + (i + 1) + ')');
                                     const cell = row.cells[i];
                                     if (headerCell && cell) {{
@@ -2933,19 +3071,37 @@ class DataQualityChecker:
                                         cell.style.display = '';
                                     }}
                                 }}
+                                
+                                // For validation columns, show only those matching the rule filter (if any)
+                                for (let i = dataColumnCount; i < row.cells.length; i++) {{
+                                    const headerCell = table.querySelector('thead tr th:nth-child(' + (i + 1) + ')');
+                                    const validationCell = row.cells[i];
+                                    if (headerCell && validationCell) {{
+                                        const headerText = headerCell.textContent.toLowerCase();
+                                        let shouldShowValidationColumn = true;
+                                        
+                                        // If a rule filter is selected, only show matching validation columns
+                                        if (filterRule && filterRule !== "") {{
+                                            if (filterRule.toLowerCase().includes('levenshtein similarity')) {{
+                                                // For Levenshtein, check if header contains "levenshtein"
+                                                shouldShowValidationColumn = headerText.includes('levenshtein');
+                                            }} else {{
+                                                // Standard validation columns - check if rule matches
+                                                const ruleText = filterRule.toLowerCase();
+                                                shouldShowValidationColumn = headerText.includes(ruleText);
+                                            }}
+                                        }}
+                                        
+                                        if (shouldShowValidationColumn) {{
+                                            headerCell.style.display = '';
+                                            validationCell.style.display = '';
+                                        }} else {{
+                                            headerCell.style.display = 'none';
+                                            validationCell.style.display = 'none';
+                                        }}
+                                    }}
+                                }}
                             }}
-                            
-                            // Reset all column visibility when "All Columns" is selected
-                            if (filterColumn === "0") {{
-                                const allHeaders = table.querySelectorAll('thead tr th');
-                                const allCells = row.querySelectorAll('td');
-                                allHeaders.forEach(header => {{
-                                    header.style.display = '';
-                                }});
-                                allCells.forEach(cell => {{
-                                    cell.style.display = '';
-                    }});
-                }}
 
                                                         // Validation rule filter - only show rows that have the selected rule
                             if (filterRule && filterRule !== "" && showRow) {{
@@ -2959,12 +3115,26 @@ class DataQualityChecker:
                                     let hasRule = false;
                                     for (let i = dataColumnCount; i < row.cells.length; i++) {{
                                         const headerCell = table.querySelector('thead tr th:nth-child(' + (i + 1) + ')');
-                                        if (headerCell && headerCell.textContent.toLowerCase().includes(filterRule.replace('_', ' '))) {{
-                                            const validationCell = row.cells[i];
-                                            const cellValue = validationCell.textContent.trim();
-                                            if (cellValue !== "N/A") {{
-                                                hasRule = true;
-                                                break;
+                                        if (headerCell) {{
+                                            const headerText = headerCell.textContent.toLowerCase();
+                                            let ruleMatches = false;
+                                            
+                                            if (filterRule.toLowerCase().includes('levenshtein similarity')) {{
+                                                // For Levenshtein, check if header contains "levenshtein"
+                                                ruleMatches = headerText.includes('levenshtein');
+                                            }} else {{
+                                                // Standard validation columns - check if rule matches
+                                                const ruleText = filterRule.toLowerCase();
+                                                ruleMatches = headerText.includes(ruleText);
+                                            }}
+                                            
+                                            if (ruleMatches) {{
+                                                const validationCell = row.cells[i];
+                                                const cellValue = validationCell.textContent.trim();
+                                                if (cellValue !== "N/A") {{
+                                                    hasRule = true;
+                                                    break;
+                                                }}
                                             }}
                                         }}
                                     }}
@@ -3026,7 +3196,38 @@ class DataQualityChecker:
                         }});
                     }} else {{
                         // Show only rules that apply to the selected column
-                        const availableRules = columnRuleMapping[selectedColumnName] || [];
+                        let availableRules = columnRuleMapping[selectedColumnName] || [];
+                        
+                        // If no rules found for exact column name, check if any validation columns contain this column
+                        if (availableRules.length === 0) {{
+                            const table = document.getElementById('dataTable');
+                            const headers = table.querySelectorAll('thead tr th');
+                            
+                            // Look for validation columns that contain this column name
+                            for (let i = dataColumnCount; i < headers.length; i++) {{
+                                const headerText = headers[i].textContent.toLowerCase();
+                                const selectedText = selectedColumnName.toLowerCase();
+                                
+                                // Check if this validation column applies to our selected column
+                                if (headerText.includes(selectedText)) {{
+                                    // Extract the rule from the header text
+                                    let rule = '';
+                                    if (headerText.startsWith('levenshtein (')) {{
+                                        rule = 'levenshtein similarity (threshold: 0.6)'; // Default threshold
+                                    }} else {{
+                                        // Extract rule from format: "column_rule" or "col1, col2_rule"
+                                        const lastUnderscoreIndex = headerText.lastIndexOf('_');
+                                        if (lastUnderscoreIndex > 0) {{
+                                            rule = headerText.substring(lastUnderscoreIndex + 1);
+                                        }}
+                                    }}
+                                    
+                                    if (rule && !availableRules.includes(rule)) {{
+                                        availableRules.push(rule);
+                                    }}
+                                }}
+                            }}
+                        }}
                         
                         Array.from(filterRule.options).forEach(option => {{
                             if (option.value === '') {{
@@ -3781,8 +3982,11 @@ class DataQualityChecker:
                         columns = result['details']['columns']
                         
                         if rule == 'all not null':
-                            # Check if ALL columns are non-null for this row
-                            all_not_null = all(pd.notna(row[col]) for col in columns if col in row.index)
+                            # Check if ALL columns are non-null and non-empty for this row
+                            all_not_null = all(
+                                pd.notna(row[col]) and str(row[col]).strip() != '' 
+                                for col in columns if col in row.index
+                            )
                             cell_status = "Passed" if all_not_null else "Failed"
                         elif rule == 'unique combination':
                             # Check if this row's combination is unique
@@ -3853,7 +4057,8 @@ class DataQualityChecker:
                             cell_status = "N/A"
                     elif matching_column:
                         if rule == 'not null':
-                            is_not_null = pd.notna(row_value)
+                            # Check for both null values and empty strings
+                            is_not_null = pd.notna(row_value) and str(row_value).strip() != ''
                             cell_status = "Passed" if is_not_null else "Failed"
                         elif rule == 'unique':
                             # Check if this specific value is unique in the column
@@ -3943,16 +4148,37 @@ class DataQualityChecker:
                 if rule not in validation_rules:
                     validation_rules.append(rule)
                 
-                if column not in column_rule_mapping:
-                    column_rule_mapping[column] = []
-                if rule not in column_rule_mapping[column]:
-                    column_rule_mapping[column].append(rule)
+                # For multi-column validations, add the rule to each participating column
+                if 'columns' in result.get('details', {}):
+                    # Multi-column validation - add rule to each individual column
+                    participating_columns = result['details']['columns']
+                    for col in participating_columns:
+                        if col not in column_rule_mapping:
+                            column_rule_mapping[col] = []
+                        if rule not in column_rule_mapping[col]:
+                            column_rule_mapping[col].append(rule)
+                elif ' vs ' in column:
+                    # Levenshtein similarity - add to both columns
+                    col1, col2 = column.split(' vs ', 1)
+                    for col in [col1.strip(), col2.strip()]:
+                        if col not in column_rule_mapping:
+                            column_rule_mapping[col] = []
+                        if rule not in column_rule_mapping[col]:
+                            column_rule_mapping[col].append(rule)
+                else:
+                    # Single-column validation
+                    if column not in column_rule_mapping:
+                        column_rule_mapping[column] = []
+                    if rule not in column_rule_mapping[column]:
+                        column_rule_mapping[column].append(rule)
         
         # Generate column options HTML
         column_options = ''.join([f'<option value="{i+1}">{col}</option>' for i, col in enumerate(headers)])
         
         # Generate validation rule options HTML
         rule_options = ''.join([f'<option value="{rule}">{rule.replace("_", " ").title()}</option>' for rule in validation_rules])
+
+
 
         return f"""
         <script>
